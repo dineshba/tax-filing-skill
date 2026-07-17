@@ -30,6 +30,34 @@ Sources: incometax.gov.in, cbdt.gov.in, cleartax.in, taxguru.in
 
 ---
 
+## STEP 0.5 — Kickoff Questions to Ask User (before/while collecting documents)
+
+Ask these up front — each avoids a known back-and-forth or dead-end from prior filings:
+
+1. **AIS PDF is often unreadable by AI (CID/Identity-H fonts).** Ask the user to open the AIS PDF,
+   select the relevant table(s) (e.g., Part B1 TDS, Part B2 SFT dividends/interest), copy the text,
+   and paste it into a `.txt` file in the working folder — or paste it directly into the chat.
+   Do NOT spend time building/debugging a custom PDF text extractor; ask for pasted text instead.
+2. **Ask for LAST YEAR's Indian stocks and mutual fund capital gains reports** (Groww/Zerodha CG
+   report, CAMS/KFintech MF CG report) in addition to this year's — needed to check for brought-forward
+   losses (Schedule CFL) and to verify holding-period/lot dates that straddle the FY boundary
+   (e.g., a lot bought last FY, sold this FY).
+3. **US stocks: ask for the Fidelity (or equivalent broker) transaction/sale summary PDF** covering
+   the full FY (Apr-Mar) — this is the primary source for US share sale proceeds and dates.
+4. **US stocks: ask for both the Closed Lots CSV and Open Lots CSV** — Closed Lots gives historical
+   cost basis per lot for sales made this year; Open Lots gives Dec-31 and Mar-31 holdings needed for
+   Schedule FA and Schedule AL.
+5. **Ask whether the user is using (or willing to use) the Income Tax Department's Offline Utility**
+   for ITR-2, rather than the portal's direct online screens or a raw JSON upload. The Offline Utility
+   is generally the easier and more reliable path — see STEP 5.5 for why a hand-built JSON cannot be
+   uploaded directly to the portal.
+6. **Ask the user to download the pre-filled JSON from the IT portal first** (portal → e-File → Income
+   Tax Return → Download Pre-Filled Data). Fill/correct/verify it together in this AI session, then
+   have the user import/upload that corrected JSON into the Offline Utility (not directly to the portal)
+   to generate the final submittable return.
+
+---
+
 ## STEP 1 — Collect Documents
 
 Ask the user to put all files in one folder and share the path. Read each file directly — do not ask the user to pre-process.
@@ -197,6 +225,61 @@ Data row example for MSFT:
 - Validate: Sl.3 total = BFLA item 3v; Sl.5 total = BFLA item 3vii
 - Adjust +-1 rupee in Q1 if there is rounding mismatch
 - Table F is NOT auto-filled by portal. Must be entered manually every year.
+
+---
+
+## STEP 5.5 — Do NOT Hand-Build JSON for Direct Portal Upload
+
+The e-filing portal's "Upload JSON" feature is **NOT a generic JSON importer** — it validates
+`CreationInfo.SWProviderID`/`SWCreatedBy`/`JSONCreatedBy` against a registry of software vendors
+(commercial tax software, CA tools, or the Department's own Offline Utility) tied to your login
+session. A hand-crafted or AI-generated JSON, however schema-valid, will be rejected with
+**"Invalid Software Provider ID (SWProviderID) / does not have access to upload this Return"**
+even after every other schema error is fixed. This is an authorization check, not a validation
+check, and cannot be worked around by picking a different placeholder code.
+
+**Correct workflow when building/verifying values with AI assistance:**
+1. AI computes and verifies all figures (capital gains classification, schedules, totals) in a
+   workpaper or draft JSON — this is still useful for cross-checking arithmetic and catching
+   classification errors before you touch the real form.
+2. Download the Department's **Offline Utility for ITR-2** (incometax.gov.in → Downloads).
+3. Manually re-enter (or use the utility's "Import Draft ITR" feature if available for your AY)
+   the verified figures into the Offline Utility screens — do NOT try to upload a hand-built
+   JSON directly to the portal.
+4. Let the Offline Utility generate its own JSON (with a valid registered `SWProviderID`) on
+   Validate → Submit. Only JSON produced by an authorized utility/software will upload successfully.
+5. If iterating on a downloaded-then-re-edited JSON (e.g., portal round-trip for review), be aware
+   this only works if the JSON was originally produced by an authorized utility — editing values
+   inside it may or may not survive re-upload depending on portal-side JSON signature/hash checks;
+   treat this as unverified/risky, not a substitute for step 3-4.
+
+---
+
+## STEP 5.6 — Manually Editing a Filled JSON: Keep Downstream Schedules in Sync
+
+If you directly edit values in a filled ITR-2 JSON (e.g., fixing a capital-gains
+misclassification), the portal's online form normally **auto-cascades** figures from Schedule CG
+into Schedule CYLA -> Schedule BFLA -> Table F -> Part B-TI. A hand-edited JSON does **not**
+auto-cascade — every downstream schedule that references the changed figure must be updated
+by hand, in this order, or the portal will report a mismatch between schedules even though the
+final Total Income is correct:
+
+1. **Schedule CG** (`ScheduleCGFor23`) — the source-of-truth figures per asset/section.
+2. **Table F** (`AccruOrRecOfCG`, quarterly breakup) — must re-map each sale to its correct
+   quarter bucket for the NEW classification (a reclassified sale moves quarters/rows too, not
+   just its section).
+3. **Schedule CYLA** (`ScheduleCYLA`) — `IncOfCurYrUnderThatHead`/`IncOfCurYrAfterSetOff` per head
+   must match the new Schedule CG totals for that head exactly.
+4. **Schedule BFLA** (`ScheduleBFLA`) — `IncOfCurYrUndHeadFromCYLA`/`IncOfCurYrAfterSetOffBFLosses`
+   must match Schedule CYLA's post-set-off figures for that head. BFLA item **3v must equal Table F
+   Sl.3 total** (STCG applicable rate) and BFLA item **3vii must equal Table F Sl.5 total** (LTCG
+   12.5%) — these are two independently-checked places in the schema, not one shared field.
+5. **Part B-TI** (`PartB-TI`) — totals derived from BFLA.
+
+When told "X and Y are not yet fixed" after you believe you fixed them, re-check **both** CYLA and
+BFLA for that head (not just Table F) — a common mistake is updating Table F and BFLA but leaving
+Schedule CYLA (the intermediate schedule) with stale pre-fix values, which the portal also validates
+against.
 
 ---
 
@@ -463,6 +546,13 @@ Download ITR JSON from portal and verify:
 | 14 | 115JB/JC in Form 67 unclear | Not sure what to enter | Always Rs.0 for individuals; MAT/AMT is only for companies |
 | 15 | PDF files unreadable | Tried to parse ITR preview and last year ITR PDF | Image-based or DRM-protected PDFs cannot be parsed; use JSON instead |
 | 16 | STCL set-off manual calculation | Tried to compute set-off manually | Portal automatically applies via BFLA; confirm BFLA shows correct net STCG |
+| 17 | Hand-built JSON uploaded directly to portal | Assumed schema-valid JSON = uploadable | Portal rejects with "Invalid SWProviderID" — only an authorized utility/software JSON can be uploaded (see STEP 5.5) |
+| 18 | Schema errors fixed one round at a time, portal kept complaining | Treated each portal error message as complete/final | Portal validators run in stages; expect 2-4+ rounds of new errors after each fix (missing NRI stub fields, TaxAccumulatedBalRecPF sub-fields, email regex, SW code pattern, etc.) — budget for iterative rounds, not a single pass |
+| 19 | NRI placeholder fields omitted for a resident filer | Assumed NRI-only fields aren't required for residents | Schema requires `NRITransacSec48Dtl`, `NRISecur115AD`, `NRISaleOfEquityShareUs112A`, `NRISaleofForeignAsset` as **present with zero values** even for resident filers — omission fails required-key validation regardless of residency status |
+| 20 | Nested required sub-fields missed one level down | Added a required object but not required for the object itself | e.g., `ScheduleOS.IncOthThanOwnRaceHorse.TaxAccumulatedBalRecPF` itself needed nested `TotalIncomeBenefit`/`TotalTaxBenefit` (both default 0) — always check the schema recursively for `required` arrays inside newly-added objects, not just the top-level key |
+| 21 | Debt/index MF holding NASDAQ 100 or other foreign index treated as normal equity LTCG | Assumed "Equity" category label in broker report = normal 112A/holding-period rules | Section 50AA "specified mutual fund" test is based on % invested in **domestic** equity, not equity overall. A fund investing in foreign stocks (e.g., NASDAQ 100 index fund) has ~0% domestic equity and qualifies as a "specified mutual fund" — units acquired on/after 1-Apr-2023 are ALWAYS deemed STCG at slab rate regardless of actual holding period, overriding normal LTCG rules. Broker reports (e.g., Groww) may still label these "Long Term" in their column header — verify lot-by-lot purchase dates against 1-Apr-2023, don't trust the broker's category label |
+| 22 | PDF (AIS) text extraction attempted via custom CID/ToUnicode parsing | Assumed all portal PDFs use simple Tj/TJ ASCII text | AIS PDFs often use Identity-H encoded Type0 fonts requiring ToUnicode CMap decoding — writing a robust decoder in PowerShell is high-effort and error-prone (multiple attempts failed/produced garbled text). Prefer asking the user to paste the relevant AIS table text manually rather than sinking time into PDF parsing |
+| 23 | Custom XLSX reader script silently truncated output at 60 rows | Assumed script printed the full sheet | A `[Math]::Min($rows.Count, 60)` cap in `_read_xlsx2.ps1`-style scripts silently truncates long sheets (e.g., LTCG mutual fund lot lists) with no error — always check row-count caps in ad-hoc reader scripts before trusting "no more rows" as ground truth |
 
 ---
 
