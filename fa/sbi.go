@@ -1,6 +1,7 @@
 package fa
 
 import (
+	"bytes"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -38,9 +39,9 @@ type SBIRateSeries struct {
 	overrides map[string]float64 // "YYYY-MM-DD" -> rate, take precedence
 }
 
-// FetchSBIRates downloads and parses the SBI USD reference rates, trying each
-// candidate URL in turn.
-func FetchSBIRates(client *http.Client) (*SBIRateSeries, error) {
+// FetchSBICSV downloads the raw SBI USD reference-rates CSV bytes, trying each
+// candidate URL in turn. The raw bytes are returned so callers can cache them.
+func FetchSBICSV(client *http.Client) ([]byte, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
@@ -56,15 +57,25 @@ func FetchSBIRates(client *http.Client) (*SBIRateSeries, error) {
 			lastErr = fmt.Errorf("%s: status %s", url, resp.Status)
 			continue
 		}
-		series, err := LoadSBIRates(resp.Body)
+		data, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
 		if err != nil {
 			lastErr = fmt.Errorf("%s: %w", url, err)
 			continue
 		}
-		return series, nil
+		return data, nil
 	}
 	return nil, fmt.Errorf("fetch SBI rates: all sources failed: %w", lastErr)
+}
+
+// FetchSBIRates downloads and parses the SBI USD reference rates, trying each
+// candidate URL in turn.
+func FetchSBIRates(client *http.Client) (*SBIRateSeries, error) {
+	data, err := FetchSBICSV(client)
+	if err != nil {
+		return nil, err
+	}
+	return LoadSBIRates(bytes.NewReader(data))
 }
 
 // LoadSBIRates parses the SBI USD reference-rates CSV from r using the TT BUY

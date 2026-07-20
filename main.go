@@ -13,6 +13,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"os"
@@ -34,7 +35,7 @@ func run() error {
 	year := flag.Int("year", 0, "target calendar year for Schedule FA (required)")
 	pricesPath := flag.String("prices", "", "daily price CSV for the ticker (Date,Price,...); default: fetch from Yahoo Finance")
 	dividendsPath := flag.String("dividends", "", "JSON file with dividend events and optional rate overrides; default: fetch from Yahoo Finance")
-	sbiPath := flag.String("sbi", "", "local SBI USD rates CSV (default: fetch from sbi-fx-ratekeeper)")
+	sbiPath := flag.String("sbi", "", "local SBI USD rates CSV cache (default: sbi_usd.csv; downloaded from sbi-fx-ratekeeper if missing)")
 	ticker := flag.String("ticker", "MSFT", "ticker symbol used to auto-fetch prices and dividends from Yahoo Finance")
 	fetch := flag.Bool("fetch", true, "auto-fetch prices/dividends from Yahoo Finance when -prices/-dividends are not given")
 	outPath := flag.String("out", "", "output Markdown path (default: stdout)")
@@ -117,7 +118,13 @@ func parseClosed(path string) ([]fa.ClosedLot, error) {
 // Finance for the ticker), and optional manual rate overrides.
 func buildValuer(sbiPath, pricesPath, dividendsPath, ticker string, fetch bool) (*fa.Valuer, error) {
 	var rates *fa.SBIRateSeries
-	if sbiPath != "" {
+	// The SBI rates come from a local cache CSV (default sbi_usd.csv). When the
+	// file is absent it is downloaded from sbi-fx-ratekeeper and saved for reuse,
+	// so the file need not be committed (it is git-ignored).
+	if sbiPath == "" {
+		sbiPath = "sbi_usd.csv"
+	}
+	if _, statErr := os.Stat(sbiPath); statErr == nil {
 		f, err := os.Open(sbiPath)
 		if err != nil {
 			return nil, fmt.Errorf("sbi rates: %w", err)
@@ -127,12 +134,19 @@ func buildValuer(sbiPath, pricesPath, dividendsPath, ticker string, fetch bool) 
 			return nil, err
 		}
 	} else {
-		fmt.Fprintln(os.Stderr, "fetching SBI USD rates from sbi-fx-ratekeeper...")
-		r, err := fa.FetchSBIRates(nil)
+		fmt.Fprintf(os.Stderr, "SBI rates file %q not found; downloading from sbi-fx-ratekeeper...\n", sbiPath)
+		data, err := fa.FetchSBICSV(nil)
 		if err != nil {
 			return nil, fmt.Errorf("%w (pass -sbi <local csv> to use an offline copy)", err)
 		}
-		rates = r
+		if werr := os.WriteFile(sbiPath, data, 0o644); werr != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not cache SBI rates to %q: %v\n", sbiPath, werr)
+		} else {
+			fmt.Fprintf(os.Stderr, "cached SBI rates to %q\n", sbiPath)
+		}
+		if rates, err = fa.LoadSBIRates(bytes.NewReader(data)); err != nil {
+			return nil, err
+		}
 	}
 
 	valuer := &fa.Valuer{Rates: rates}

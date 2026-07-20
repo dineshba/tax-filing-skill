@@ -1,3 +1,6 @@
 fa-cli
 /fa-cli
 *.sample.md
+
+# Downloaded/cached SBI USD rate snapshot (auto-fetched at runtime)
+sbi_usd.csv

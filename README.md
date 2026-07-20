@@ -6,11 +6,13 @@ A Go CLI that reads Fidelity **Open Lots** and **Closed Lots** CSV exports and
 produces a Markdown **Schedule FA (A3)** report for a target **calendar year**
 (Jan–Dec, as Schedule FA requires — not the Apr–Mar financial year).
 
-Exchange rates are **always** the SBI USD **TT buying** rates pulled from
-[`sahilgupta/sbi-fx-ratekeeper`](https://github.com/sahilgupta/sbi-fx-ratekeeper).
-Daily prices and dividends are **auto-fetched from Yahoo Finance** for the ticker
-(default `MSFT`), so the peak, closing and dividend columns are populated out of
-the box. The report is **INR-only** (with a per-lot dividend column).
+Exchange rates are **always** the SBI USD **TT buying** rates from
+[`sahilgupta/sbi-fx-ratekeeper`](https://github.com/sahilgupta/sbi-fx-ratekeeper):
+they are downloaded to a local `sbi_usd.csv` cache on first run and reused after
+that (the cache is git-ignored). Daily prices and dividends are **auto-fetched
+from Yahoo Finance** for the ticker (default `MSFT`), so the peak, closing and
+dividend columns are populated out of the box. The report is **INR-only** (with a
+per-lot dividend column). Ready-made example inputs live in `examples/`.
 
 ### Build & test
 
@@ -22,17 +24,18 @@ go test ./...
 ### Usage
 
 ```sh
-# Everything fetched automatically (SBI rates + MSFT prices/dividends):
-go run . -open sample-open-lots.csv -closed sample-closed-lots.csv -year 2025 \
-  -out schedule-fa-2025.md
+# Everything fetched automatically (SBI rates cached to sbi_usd.csv + Yahoo prices/dividends):
+go run . -open examples/sample-open-lots.csv -closed examples/sample-closed-lots.csv \
+  -year 2025 -out schedule-fa-2025.md
 
 # A different holding:
 go run . -open open.csv -closed closed.csv -year 2025 -ticker AAPL -out fa.md
 
-# Fully offline: supply local copies and disable network fetch.
-go run . -open sample-open-lots.csv -closed sample-closed-lots.csv -year 2025 \
-  -sbi sbi_usd.csv -prices msft.csv \
-  -dividends dividends.example.json -fetch=false -out schedule-fa-2025.md
+# Fully offline / reproducible: pin the price + dividend inputs and skip Yahoo
+# (SBI rates still come from the sbi_usd.csv cache, downloaded once if missing).
+go run . -open examples/sample-open-lots.csv -closed examples/sample-closed-lots.csv \
+  -year 2025 -prices examples/msft.csv -dividends examples/dividends.example.json \
+  -fetch=false -out schedule-fa-2025.md
 ```
 
 ### Flags
@@ -45,7 +48,7 @@ go run . -open sample-open-lots.csv -closed sample-closed-lots.csv -year 2025 \
 | `-ticker` | string | `MSFT` | no | Ticker symbol used to **auto-fetch** daily prices and dividends from Yahoo Finance. |
 | `-prices` | string | – | no | Local daily price CSV (`Date,Price,Open,High,Low`) to use **instead of** the Yahoo fetch. Needed for the Peak and Closing columns; without any price data those columns are 0 and a warning is emitted. |
 | `-dividends` | string | – | no | Local JSON (`dividends` + optional `rateOverrides`, see `dividends.example.json`) to use **instead of** the Yahoo dividend fetch. Feeds the "Total Gross Amount Paid/Credited" column. |
-| `-sbi` | string | – | no | Local SBI USD rates CSV (e.g. `sbi_usd.csv`) instead of fetching from `sbi-fx-ratekeeper`. Enables fully offline runs. |
+| `-sbi` | string | `sbi_usd.csv` | no | Local SBI USD rates CSV **cache**. If the file is missing it is downloaded from `sbi-fx-ratekeeper` and saved to this path for reuse; the cache is git-ignored. |
 | `-fetch` | bool | `true` | no | When `true`, auto-fetch prices/dividends from Yahoo for any of `-prices`/`-dividends` not supplied. Set `-fetch=false` to disable all Yahoo network access (use with local `-prices`/`-dividends`). |
 | `-out` | string | – | no | Output Markdown path. Defaults to **stdout** when empty. |
 | `-entity` | string | `Microsoft Corporation` | no | Foreign entity name shown in the "Name of Entity" column. |
@@ -57,22 +60,27 @@ stable, auditable numbers, pin all inputs and disable fetching:
 
 ```sh
 go run . -open open.csv -closed closed.csv -year 2025 \
-  -sbi sbi_usd.csv -prices msft.csv -dividends dividends.json \
+  -prices examples/msft.csv -dividends examples/dividends.example.json \
   -fetch=false -out schedule-fa-2025.md
 ```
 
 ### Input files
 
+Example inputs are provided under `examples/`:
+
 - **Open Lots CSV** (`-open`) — Fidelity export of current holdings, one row per
-  open lot (`Date acquired, Quantity, Cost basis, ...`).
+  open lot (`Date acquired, Quantity, Cost basis, ...`). Example:
+  `examples/sample-open-lots.csv`.
 - **Closed Lots CSV** (`-closed`) — Fidelity export of disposals, one row per
-  sale (`Date acquired, Quantity, Date sold, Proceeds, Cost basis, ...`).
+  sale (`Date acquired, Quantity, Date sold, Proceeds, Cost basis, ...`). Example:
+  `examples/sample-closed-lots.csv`.
 - **`sbi_usd.csv`** (`-sbi`) — SBI USD reference rates from `sbi-fx-ratekeeper`
   (`DATE, PDF FILE, TT BUY, TT SELL, ...`); the **TT BUY** column is the TTBR used
-  for all USD→INR conversion. A copy is checked into the repo.
-- **`msft.csv`** (`-prices`) — daily USD close prices for the ticker
+  for all USD→INR conversion. Downloaded automatically on first run and cached
+  (git-ignored) — you do not need to create it.
+- **`examples/msft.csv`** (`-prices`) — daily USD close prices for the ticker
   (`Date,Price,Open,High,Low`); required for the Peak and Closing columns.
-- **`dividends.example.json`** (`-dividends`) — dividend schedule:
+- **`examples/dividends.example.json`** (`-dividends`) — dividend schedule:
   `dividends[].exDate` + `dividends[].usdPerShare`, plus an optional
   `rateOverrides` map (`"YYYY-MM-DD": rate`) to pin a manual SBI rate for
   acquisition dates that predate the ratekeeper dataset.

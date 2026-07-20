@@ -62,8 +62,8 @@ func TestE2E_INRReport(t *testing.T) {
 	outFile := filepath.Join(t.TempDir(), "schedule-fa-2025.md")
 
 	cmd := exec.Command(bin,
-		"-open", "sample-open-lots.csv",
-		"-closed", "sample-closed-lots.csv",
+		"-open", "examples/sample-open-lots.csv",
+		"-closed", "examples/sample-closed-lots.csv",
 		"-year", "2025",
 		"-sbi", sbi,
 		"-prices", prices,
@@ -103,8 +103,8 @@ func TestE2E_NoPricesWarns(t *testing.T) {
 	outFile := filepath.Join(t.TempDir(), "schedule-fa-2025-noprices.md")
 
 	cmd := exec.Command(bin,
-		"-open", "sample-open-lots.csv",
-		"-closed", "sample-closed-lots.csv",
+		"-open", "examples/sample-open-lots.csv",
+		"-closed", "examples/sample-closed-lots.csv",
 		"-year", "2025",
 		"-sbi", sbi,
 		"-fetch=false",
@@ -129,7 +129,7 @@ func TestE2E_NoPricesWarns(t *testing.T) {
 
 func TestE2E_MissingArgs(t *testing.T) {
 	bin := buildCLI(t)
-	cmd := exec.Command(bin, "-open", "sample-open-lots.csv")
+	cmd := exec.Command(bin, "-open", "examples/sample-open-lots.csv")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
 		t.Fatal("expected non-zero exit for missing args")
