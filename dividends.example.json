@@ -1,0 +1,11 @@
+{
+  "dividends": [
+    { "exDate": "2025-02-19", "usdPerShare": 0.83 },
+    { "exDate": "2025-05-14", "usdPerShare": 0.83 },
+    { "exDate": "2025-08-20", "usdPerShare": 0.83 },
+    { "exDate": "2025-11-19", "usdPerShare": 0.91 }
+  ],
+  "rateOverrides": {
+    "2019-08-19": 71.765
+  }
+}
