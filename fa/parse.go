@@ -143,7 +143,16 @@ func readCSV(r io.Reader) ([][]string, error) {
 	// The Fidelity Closed Lots export wraps a header cell in raw HTML that
 	// contains bare double quotes, so tolerate non-standard quoting.
 	cr.LazyQuotes = true
-	return cr.ReadAll()
+	records, err := cr.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	// Fidelity exports are UTF-8 with a leading byte-order mark; strip it from
+	// the first cell so header detection and date parsing work.
+	if len(records) > 0 && len(records[0]) > 0 {
+		records[0][0] = strings.TrimPrefix(records[0][0], "\ufeff")
+	}
+	return records, nil
 }
 
 // isSkippableRow reports whether a CSV row is empty, blank, or the trailing

@@ -134,6 +134,32 @@ func TestParseClosedLots_HTMLHeaderAndUpperMonths(t *testing.T) {
 	}
 }
 
+func TestParseOpenLots_BOMAndCapitalizedHeader(t *testing.T) {
+	// UTF-8 BOM prefix and a differently-cased "Date Acquired" header, as some
+	// Fidelity exports produce.
+	in := "\ufeffDate Acquired,Quantity,Cost basis,Cost basis/share,Value,Gain/loss,Sale availability date,Transfer availability date,Grant date,Share source,Holding period\n" +
+		"May-15-2023,4.0000,1235.88,308.97,1491.88,256.00,-,-,-,DO,Long\n"
+	lots := mustParseOpen(t, in)
+	if len(lots) != 1 {
+		t.Fatalf("expected 1 lot, got %d", len(lots))
+	}
+	if !lots[0].DateAcquired.Equal(date(2023, time.May, 15)) {
+		t.Errorf("date acquired = %v", lots[0].DateAcquired)
+	}
+}
+
+func TestParseClosedLots_BOM(t *testing.T) {
+	in := "\ufeffDate acquired,Quantity,Date sold or transferred,Proceeds,Cost basis,Gain/loss,Term\n" +
+		"MAY/15/2023,10.0000,JAN/28/2025,4458.29,3089.70,1368.59,LONG\n"
+	lots := mustParseClosed(t, in)
+	if len(lots) != 1 {
+		t.Fatalf("expected 1 closed lot, got %d", len(lots))
+	}
+	if !lots[0].DateSold.Equal(date(2025, time.January, 28)) {
+		t.Errorf("date sold = %v", lots[0].DateSold)
+	}
+}
+
 func TestNormaliseMonthCase(t *testing.T) {
 	cases := map[string]string{
 		"MAY/15/2023": "May/15/2023",

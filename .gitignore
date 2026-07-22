@@ -4,3 +4,10 @@ fa-cli
 
 # Downloaded/cached SBI USD rate snapshot (auto-fetched at runtime)
 sbi_usd.csv
+
+# Real broker exports and generated reports (never commit personal data)
+View open lots.csv
+View closed lots.csv
+View*lots.csv
+schedule-fa-*.md
+*.md.out
