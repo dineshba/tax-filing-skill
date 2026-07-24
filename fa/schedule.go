@@ -57,7 +57,10 @@ type sale struct {
 	cost     float64 // USD cost basis of the disposed shares
 }
 
-// lotAgg accumulates all activity for one acquisition date.
+// lotAgg accumulates all activity for one tax lot. Each open-lot line in the
+// Fidelity export becomes its own lotAgg (so lots sharing an acquisition date
+// are reported on separate rows); a lot that was fully sold before the snapshot
+// has no open line and is represented by a synthetic sold-out lotAgg per date.
 type lotAgg struct {
 	acqDate       time.Time
 	grant         *time.Time
@@ -65,6 +68,7 @@ type lotAgg struct {
 	initialUSD    float64
 	openHeld      float64 // shares still held at the snapshot (report) date
 	sales         []sale
+	seq           int // input order, for stable per-date row ordering
 }
 
 // heldAt returns the shares of this lot still held at the end of day d, assuming
@@ -99,17 +103,6 @@ func ComputeScheduleFA(open []OpenLot, closed []ClosedLot, year int, v *Valuer) 
 	yearEnd := time.Date(year, time.December, 31, 0, 0, 0, 0, time.UTC)
 	yearStart := time.Date(year, time.January, 1, 0, 0, 0, 0, time.UTC)
 
-	groups := map[time.Time]*lotAgg{}
-	get := func(d time.Time) *lotAgg {
-		k := dayKey(d)
-		a, ok := groups[k]
-		if !ok {
-			a = &lotAgg{acqDate: k}
-			groups[k] = a
-		}
-		return a
-	}
-
 	sched := ScheduleFA{Year: year, HasINR: v != nil}
 	addWarn := func(err error) {
 		if err != nil {
@@ -117,17 +110,43 @@ func ComputeScheduleFA(open []OpenLot, closed []ClosedLot, year int, v *Valuer) 
 		}
 	}
 
+	// Each open-lot line is reported as its own row; lots sharing an
+	// acquisition date are kept separate. Sales are attached to a held lot of
+	// the same acquisition date, or to a synthetic sold-out lot when the whole
+	// lot was disposed before the snapshot.
+	var lots []*lotAgg
+	openByDate := map[time.Time][]*lotAgg{}
+	soldOutByDate := map[time.Time]*lotAgg{}
+	seq := 0
+
 	for _, l := range open {
-		a := get(l.DateAcquired)
-		a.initialShares += l.Quantity
-		a.initialUSD += l.CostBasis
-		a.openHeld += l.Quantity
-		if a.grant == nil && l.GrantDate != nil {
-			a.grant = l.GrantDate
+		k := dayKey(l.DateAcquired)
+		a := &lotAgg{
+			acqDate:       k,
+			grant:         l.GrantDate,
+			initialShares: l.Quantity,
+			initialUSD:    l.CostBasis,
+			openHeld:      l.Quantity,
+			seq:           seq,
 		}
+		seq++
+		lots = append(lots, a)
+		openByDate[k] = append(openByDate[k], a)
 	}
 	for _, l := range closed {
-		a := get(l.DateAcquired)
+		k := dayKey(l.DateAcquired)
+		var a *lotAgg
+		switch {
+		case len(openByDate[k]) > 0:
+			a = openByDate[k][0]
+		case soldOutByDate[k] != nil:
+			a = soldOutByDate[k]
+		default:
+			a = &lotAgg{acqDate: k, seq: seq}
+			seq++
+			soldOutByDate[k] = a
+			lots = append(lots, a)
+		}
 		a.initialShares += l.Quantity
 		a.initialUSD += l.CostBasis
 		a.sales = append(a.sales, sale{date: l.DateSold, qty: l.Quantity, proceeds: l.Proceeds, cost: l.CostBasis})
@@ -138,14 +157,18 @@ func ComputeScheduleFA(open []OpenLot, closed []ClosedLot, year int, v *Valuer) 
 		dividends = v.DividendsInYear(year)
 	}
 
-	keys := make([]time.Time, 0, len(groups))
-	for k := range groups {
-		keys = append(keys, k)
-	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i].Before(keys[j]) })
+	sort.Slice(lots, func(i, j int) bool {
+		if !lots[i].acqDate.Equal(lots[j].acqDate) {
+			return lots[i].acqDate.Before(lots[j].acqDate)
+		}
+		// Within the same acquisition date, report the larger holding first.
+		if lots[i].initialUSD != lots[j].initialUSD {
+			return lots[i].initialUSD > lots[j].initialUSD
+		}
+		return lots[i].seq < lots[j].seq
+	})
 
-	for _, k := range keys {
-		a := groups[k]
+	for _, a := range lots {
 		if a.acqDate.After(yearEnd) {
 			continue
 		}

@@ -262,6 +262,32 @@ func TestComputeScheduleFA_2025_USD(t *testing.T) {
 	}
 }
 
+func TestComputeScheduleFA_SplitsSameDateOpenLots(t *testing.T) {
+	// Two open lots acquired on the same date must be reported as two rows,
+	// ordered largest-holding first, not merged into one.
+	open := `Date acquired,Quantity,Cost basis,Cost basis/share,Value,Gain/loss,Sale availability date,Transfer availability date,Grant date,Share source,Holding period
+Mar-10-2025,1.0000,100.00,100.00,120.00,20.00,-,-,-,DO,Short
+Mar-10-2025,3.0000,300.00,100.00,360.00,60.00,-,-,-,DO,Short`
+	closed := `Date acquired,Quantity,Date sold,Proceeds,Cost basis,Gain/loss,Term`
+	s, err := ComputeScheduleFA(mustParseOpen(t, open), mustParseClosed(t, closed), 2025, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := date(2025, time.March, 10)
+	var rows []FALotRow
+	for _, r := range s.Rows {
+		if r.AcquisitionDate.Equal(want) {
+			rows = append(rows, r)
+		}
+	}
+	if len(rows) != 2 {
+		t.Fatalf("same-date open lots: got %d rows, want 2", len(rows))
+	}
+	if !approx(rows[0].InitialValueUSD, 300.0) || !approx(rows[1].InitialValueUSD, 100.0) {
+		t.Errorf("rows not ordered largest-first: %v, %v", rows[0].InitialValueUSD, rows[1].InitialValueUSD)
+	}
+}
+
 func TestComputeScheduleFA_2024_Reconstruction(t *testing.T) {
 	s, err := ComputeScheduleFA(mustParseOpen(t, smallOpen), mustParseClosed(t, smallClosed), 2024, nil)
 	if err != nil {
