@@ -92,12 +92,17 @@ Code, Name/Address/Zip/Nature of Entity, Date of Acquiring the Interest, Initial
 Value, Peak Value, Closing Balance, Total Gross Amount Paid/Credited (dividends)
 and Total Gross Proceeds — with amounts in Indian-grouped rupees (e.g. ₹13,21,811).
 
-Rows are grouped by acquisition date (one row per lot). For the target year, all
-USD→INR conversions use the SBI TT buying rate **on the relevant date** (or the
-nearest published rate on/before it):
+Each open-lot line is reported as its own row (lots sharing an acquisition date
+appear separately). For the target year, all USD→INR conversions use the SBI TT
+buying rate **on the relevant date** (or the nearest published rate on/before
+it):
 
-- **Initial value** = original acquisition USD cost × SBI TT rate on the
-  acquisition date.
+- **Initial value** = fair market value of the shares **still held** on the
+  acquisition date (`shares × USD close × SBI TT rate`) plus the original **cost
+  basis** of the shares already sold. For RSUs the cost basis already equals FMV;
+  for discounted ESPP lots this reports the retained shares at FMV (the correct
+  cost of acquisition once the discount is taxed as a perquisite). Falls back to
+  the CSV cost basis when no price is available for the acquisition date.
 - **Peak value** = the maximum, over every trading day the lot is held, of
   `shares held × USD close × SBI TT rate` that day (the price-high and FX-high
   can fall on different days, so the true peak is computed day by day).
@@ -112,8 +117,8 @@ nearest published rate on/before it):
 The **`-year`** flag defines the reporting window and therefore changes the
 report: it selects which lots still have holdings/activity, the 31 Dec year-end
 holdings, the in-year sales and proceeds, the peak-scan date range, and the
-in-year dividends. Only the **Initial value** column is year-independent (it uses
-the acquisition date and its rate).
+in-year dividends. The **Initial value** column uses the acquisition date and its
+rate/price, so it is largely year-independent.
 
 Dividends and daily prices are not in the CSVs, so they are fetched from Yahoo
 Finance by default, or supplied via `-prices` / `-dividends`. The `rateOverrides`

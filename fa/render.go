@@ -124,7 +124,7 @@ func RenderMarkdown(w io.Writer, s ScheduleFA, e Entity) error {
 	}
 
 	b.WriteString("---\n")
-	b.WriteString("_Initial value = acquisition cost × SBI TT buying rate on the acquisition date. ")
+	b.WriteString("_Initial value = fair market value on the acquisition date (shares × USD close × SBI TT buying rate); this equals cost basis for RSUs and uses FMV for discounted ESPP lots. ")
 	b.WriteString("Peak value = max over each trading day of shares held × USD close × SBI TT rate that day. ")
 	b.WriteString("Closing balance = shares held on 31 Dec × 31 Dec close × 31 Dec SBI TT rate. ")
 	b.WriteString("Gross amount paid/credited = dividends on shares held on each ex-date × SBI TT rate. ")

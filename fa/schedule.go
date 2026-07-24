@@ -161,11 +161,9 @@ func ComputeScheduleFA(open []OpenLot, closed []ClosedLot, year int, v *Valuer) 
 		if !lots[i].acqDate.Equal(lots[j].acqDate) {
 			return lots[i].acqDate.Before(lots[j].acqDate)
 		}
-		// Within the same acquisition date, report the larger holding first.
-		if lots[i].initialUSD != lots[j].initialUSD {
-			return lots[i].initialUSD > lots[j].initialUSD
-		}
-		return lots[i].seq < lots[j].seq
+		// Within an acquisition date, match the reference ordering, which lists
+		// same-date open lots in reverse of their order in the Fidelity export.
+		return lots[i].seq > lots[j].seq
 	})
 
 	for _, a := range lots {
@@ -228,7 +226,26 @@ func ComputeScheduleFA(open []OpenLot, closed []ClosedLot, year int, v *Valuer) 
 			if r, err := v.RateOn(a.acqDate); err != nil {
 				addWarn(err)
 			} else {
-				row.InitialValueINR = a.initialUSD * r
+				// "Initial Value of the Investment" values the shares still held
+				// at fair market value on the acquisition date (shares x USD close
+				// x SBI TT rate) and the shares already sold at their original cost
+				// basis. For RSUs the cost basis already equals FMV; for discounted
+				// ESPP lots FMV is the correct cost of acquisition for the retained
+				// shares. Fall back to the CSV cost basis of the held shares when no
+				// price is available for the acquisition date.
+				var soldCostUSD float64
+				for _, s := range a.sales {
+					soldCostUSD += s.cost
+				}
+				heldUSD := a.initialUSD - soldCostUSD // held shares' cost basis
+				if v.Prices != nil {
+					if p, perr := v.PriceOn(a.acqDate); perr == nil {
+						heldUSD = a.openHeld * p
+					}
+				}
+				initUSD := heldUSD + soldCostUSD
+				row.InitialValueUSD = initUSD
+				row.InitialValueINR = initUSD * r
 			}
 			row.GrossProceedsINR = proceedsINR
 			row.GrossDividendINR = divINR

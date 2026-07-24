@@ -288,6 +288,28 @@ Mar-10-2025,3.0000,300.00,100.00,360.00,60.00,-,-,-,DO,Short`
 	}
 }
 
+func TestComputeScheduleFA_InitialValueFMV(t *testing.T) {
+	// ESPP-style lot bought at a discount (cost 400/share) whose FMV on the
+	// acquisition date is 450/share. Two shares are held and one is sold in-year.
+	// Initial value = held 2 x FMV 450 + sold 1 x cost 400, all x rate(2025-01-15).
+	open := `Date acquired,Quantity,Cost basis,Cost basis/share,Value,Gain/loss,Sale availability date,Transfer availability date,Grant date,Share source,Holding period
+Jan-15-2025,2.0000,800.00,400.00,900.00,100.00,-,-,-,SP,Short`
+	closed := `Date acquired,Quantity,Date sold,Proceeds,Cost basis,Gain/loss,Term
+JAN/15/2025,1.0000,NOV/01/2025,500.00,400.00,100.00,SHORT`
+	s, err := ComputeScheduleFA(mustParseOpen(t, open), mustParseClosed(t, closed), 2025, newValuer(t, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := findRow(t, s, 2025, time.January, 15)
+	wantUSD := 2.0*450.0 + 400.0 // 1300
+	if !approx(row.InitialValueUSD, wantUSD) {
+		t.Errorf("initial USD = %v, want %v", row.InitialValueUSD, wantUSD)
+	}
+	if !approx(row.InitialValueINR, wantUSD*86.0) { // rate on/before 2025-01-15 = 86
+		t.Errorf("initial INR = %v, want %v", row.InitialValueINR, wantUSD*86.0)
+	}
+}
+
 func TestComputeScheduleFA_2024_Reconstruction(t *testing.T) {
 	s, err := ComputeScheduleFA(mustParseOpen(t, smallOpen), mustParseClosed(t, smallClosed), 2024, nil)
 	if err != nil {
@@ -330,7 +352,8 @@ func TestComputeScheduleFA_INR(t *testing.T) {
 	}
 	may := findRow(t, s, 2023, time.May, 15)
 
-	// Initial = cost basis 5561.46 x rate on 2023-05-15 (82).
+	// Initial = cost basis 5561.46 x rate on 2023-05-15 (82). The price fixture
+	// has no 2023-05-15 close, so initial value falls back to cost basis.
 	if !approx(may.InitialValueINR, 5561.46*82.0) {
 		t.Errorf("initial INR = %v, want %v", may.InitialValueINR, 5561.46*82.0)
 	}
